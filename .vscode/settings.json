@@ -1,0 +1,7 @@
+{
+    "files.exclude": {
+        "**/.virtual_documents": true,
+        "**/.ipynb_checkpoints": true,
+        "**/__pycache__": true
+    }
+}

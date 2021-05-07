@@ -1,0 +1,18 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "process",
+            "type": "python",
+            "request": "launch",
+            "program": "process.py",
+            "args": [
+                "--path",
+                "data/v6/forest-01",
+                "--output",
+                "results"
+            ],
+            "console": "integratedTerminal"
+        }
+    ]
+}
