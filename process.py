@@ -24,7 +24,7 @@ def main(args):
 
     # zip files
     zip_files = os.path.join(args.path, '*.zip')
-    for zip_path in sorted(gb.glob(zip_files, recursive=True))[:1]:
+    for zip_path in sorted(gb.glob(zip_files, recursive=True)):
 
         # load data
         data = ut.load_data(zip_path)
