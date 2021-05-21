@@ -13,6 +13,9 @@ import matplotlib.pyplot as plt
 
 
 def main(args):
+    """
+    Execute with: python process.py --path data/v6/forest-xx
+    """
 
     # zip files
     zip_files = os.path.join(args.path, '*.zip')
@@ -39,9 +42,9 @@ def main(args):
 
         # integrate ground
         ground, alphas = ut.integrate_ground(df, parameters)
-        df_alpha = pd.DataFrame(alphas.T, columns=['x', 'y', 'alpha'])
-        df_alpha = df_alpha.sample(n=np.minimum(df_alpha.shape[0], 10**5), random_state=42)
-        # df_alpha.to_csv(os.path.join(output_folder, f'alpha{name_suffix}.csv'), index=False)
+        df_alpha = pd.DataFrame(alphas.T, columns=['visible_x', 'visible_y', 'camera_x', 'camera_y', 'alpha'])
+        df_alpha = df_alpha.sort_values(['visible_x', 'visible_y'], ignore_index=True)
+        df_alpha = df_alpha.apply(pd.to_numeric, downcast='integer')
         np.save(os.path.join(output_folder, f'ground{name_suffix}.npy'), ground)
         np.save(os.path.join(output_folder, f'alpha{name_suffix}.npy'), alphas)
 
@@ -51,15 +54,16 @@ def main(args):
         ut.export_plot(fig, os.path.join(output_folder, f'stage{name_suffix}.png'))
 
         # plot ground images
-        fig, axs = plt.subplots(1, 3, figsize=(29, 7))
-        fig.tight_layout()
-        ut.plot_heatmap(axs[0], ground[:, :, 0], 'scanned (count)')
-        ut.plot_heatmap(axs[1], ground[:, :, 1], 'captured (count)')
-        ut.plot_heatmap(axs[2], ut.normalize_image(ground[:, :, 1] > 0), 'captured (binary)')
+        fig, axs = plt.subplots(1, 4, figsize=(24, 4))
+        ut.plot_heatmap(axs[0], ground[:, :, 0], 'scanned pixels (count)')
+        ut.plot_heatmap(axs[1], ground[:, :, 1], 'captured pixels (count)')
+        ut.plot_heatmap(axs[2], ground[:, :, 2], 'captured pixels (alpha)')
+        ut.plot_heatmap(axs[3], ut.normalize_image(ground[:, :, 1] > 0), 'captured pixels (binary)')
         ut.export_plot(fig, os.path.join(output_folder, f'ground{name_suffix}.png'))
 
         # plot alpha distribution
         fig, ax = plt.subplots(figsize=(12, 8))
+        df_alpha = df_alpha.sample(n=np.minimum(df_alpha.shape[0], 10**5), random_state=42)
         ut.plot_histogram(ax, df_alpha, 'alpha', f'field of view {parameters["view"]}°')
         ut.export_plot(fig, os.path.join(output_folder, f'alpha{name_suffix}.png'))
 
