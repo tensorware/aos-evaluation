@@ -90,92 +90,11 @@ def load_data(path):
     return data
 
 
-def get_value(dic, keys):
-    for key in keys:
-        dic = dic[key]
-    return dic
-
-
-def set_value(dic, keys, value):
-    for key in keys[:-1]:
-        dic = dic.setdefault(key, {})
-    dic[keys[-1]] = value
-    return dic
-
-
-def shift_image(image, dx, dy):
-    X = image.copy()
-    X = np.roll(X, dy, axis=0)
-    X = np.roll(X, dx, axis=1)
-
-    if dy > 0:
-        X[:dy, :] = 0
-    elif dy < 0:
-        X[dy:, :] = 0
-
-    if dx > 0:
-        X[:, :dx] = 0
-    elif dx < 0:
-        X[:, dx:] = 0
-
-    return X
-
-
-def rgba_color(color):
-    return np.array([(color & 0xff0000) >> 16, (color & 0x00ff00) >> 8, (color & 0x0000ff), 255])
-
-
-def grayscale_image(image):
-    return np.dot(image[..., :3], [0.2989, 0.5870, 0.1140])
-
-
-def normalize_image(image):
-    image = image.astype(np.float64)
-    for i in range(3):
-        minimum, maximum = image[..., i].min(), image[..., i].max()
-        if minimum != maximum:
-            image[..., i] -= minimum
-            image[..., i] *= (maximum / (maximum - minimum))
-    return image.astype(np.uint8)
-
-
-def plot_heatmap(ax, image, label):
-    ax.set_title(label)
-    sns.heatmap(image, xticklabels=False, yticklabels=False, ax=ax)
-
-
-def plot_histogram(ax, df, x, label):
-    ax.set_title(label)
-    sns.histplot(df, x=x, bins=40, alpha=0.8, kde=True, ax=ax)
-
-
-def plot_image(ax, image, label):
-    ax.set_title(label)
-    ax.set_xticks([])
-    ax.set_yticks([])
-    ax.imshow(image)
-
-
-def plot_images(images, labels, rows=5, cols=5):
-    fig, axes = plt.subplots(rows, cols, figsize=(16, 16))
-    axes = [a for axs in axes for a in axs]
-
-    for i, image in enumerate(images[:rows * cols]):
-        plot_image(axes[i], image, labels[i])
-    plt.show()
-
-
-def export_plot(fig, path):
-    fig.savefig(path, transparent=True)
-    fig.clf()
-    plt.close()
-
-
 def integrate_image(images, parameters, N=30):
     integrated = []
 
     # mask ground color
-    color = rgba_color(parameters['color'])
+    color = rgba(parameters['color'])
 
     # current image
     for i, row in images.iterrows():
@@ -203,63 +122,153 @@ def integrate_ground(images, parameters):
     ratio = parameters['resolution'] / parameters['coverage']
 
     # ground size
-    size = np.ceil((parameters['ground'] + 1) * ratio).astype(np.int16)
-    ground = np.zeros((size, size, 3))
+    size = np.floor(parameters['ground'] * ratio).astype(np.uint16)
+    ground = np.zeros((size, size, 2)).astype(np.uint16)
+    alphas = np.zeros((size, size, 2, parameters['view'])).astype(np.uint16)
 
     # mask ground color
-    color = rgba_color(parameters['color'])
+    color = rgba(parameters['color'])
 
     # current image
-    alphas = []
     for i, row in images.iterrows():
         img, img_x, img_z = row[['data', 'processed.x', 'processed.z']]
-        center = np.ceil(np.add([size / 2, size / 2], [img_x, img_z])).astype(np.int16)
 
-        slice_outer = np.array([img.shape[0], img.shape[1]]) // 2
-        slice_border = np.array([center - slice_outer, center + slice_outer]).T
+        # image center, radius and border position on target area
+        center = np.floor(np.add([size / 2, size / 2], [img_x, img_z])).astype(np.int16)
+        radius = np.floor([img.shape[0] / 2, img.shape[1] / 2]).astype(np.int16)
+        border = np.array([center - radius, center + radius]).T
 
-        slice_clipped = np.clip(slice_border, 0, size - 1)
-        slice_offset = np.where(slice_clipped - slice_border == 0, None, slice_clipped - slice_border)
+        # remove image pixels outside target area
+        clipped = np.clip(border, 0, size - 1)
+        offset = np.where(clipped - border == 0, None, clipped - border)
 
-        # slice indices
-        slice_x, slice_y = slice(*slice_clipped[0]), slice(*slice_clipped[1])
-        slice_x_offset, slice_y_offset = slice(*slice_offset[0]), slice(*slice_offset[1])
+        # image slice indices inside target area
+        slice_x, slice_y = slice(*clipped[0]), slice(*clipped[1])
+        slice_x_offset, slice_y_offset = slice(*offset[0]), slice(*offset[1])
 
-        # visible ground indices
-        visible_mask = np.all(img == color, axis=2)[slice_y_offset, slice_x_offset]
-        visible_mask_x, visible_mask_y = np.nonzero(visible_mask)
-        visible_ground_x, visible_ground_y = visible_mask_x + slice_x.start, visible_mask_y + slice_y.start
+        # visible ground mask
+        visible_mask = np.all(img[slice_y_offset, slice_x_offset] == color, axis=2)
+        scanned_mask = np.full(visible_mask.shape, True)
+        shift_mask = np.array([slice_x.start - center[0], slice_y.start - center[1]])
 
-        # visible ground alpha
-        distance = np.linalg.norm([center[0] - visible_ground_x, center[1] - visible_ground_y], axis=0, keepdims=True)
-        alpha = np.arcsin(distance / np.sqrt(distance**2 + (parameters['height'] * ratio)**2))
+        # calculate alphas
+        alphas_scanned_value = calculate_alpha(scanned_mask, shift_mask, parameters)
+        alphas_visible_value = calculate_alpha(visible_mask, shift_mask, parameters)
 
-        # count captures (0: red)
-        ground_red = ground[slice_y, slice_x][:, :, 0]
+        # count alphas scanned
+        alphas_scanned = alphas[slice_y, slice_x][scanned_mask, 0, alphas_scanned_value]
+        alphas[slice_y, slice_x][scanned_mask, 0, alphas_scanned_value] = alphas_scanned + 1
 
-        # count visibility (1: green)
-        ground_green = ground[slice_y, slice_x][visible_mask, 1]
+        # count alphas visible
+        alphas_visible = alphas[slice_y, slice_x][visible_mask, 1, alphas_visible_value]
+        alphas[slice_y, slice_x][visible_mask, 1, alphas_visible_value] = alphas_visible + 1
 
-        # count ? (2: blue)
-        ground_blue = ground[slice_y, slice_x][visible_mask, 2]
+        # count ground scanned
+        ground_scanned = ground[slice_y, slice_x][:, :, 0]
+        ground[slice_y, slice_x][:, :, 0] = ground_scanned + 1
 
-        # update image
-        ground[slice_y, slice_x][:, :, 0] = ground_red + 1
-        ground[slice_y, slice_x][visible_mask, 1] = ground_green + 1
-        ground[slice_y, slice_x][visible_mask, 2] = ground_blue + 0
-
-        # interesting (last alpha captured)
-        # np.putmask(tmp[slice_y, slice_x][:, :, 2], visible_mask, alpha)
-
-        # append alpha angles per visible points
-        alphas.append([visible_ground_x, visible_ground_y, alpha])
-
-    # flatten alpha
-    alphas = np.array(alphas)
-    alphas = np.array([
-        np.hstack(alphas[:, 0]).flatten(),
-        np.hstack(alphas[:, 1]).flatten(),
-        np.rad2deg(np.hstack(alphas[:, 2]).flatten())
-    ]).astype(np.float64)
+        # count ground visible
+        ground_visible = ground[slice_y, slice_x][visible_mask, 1]
+        ground[slice_y, slice_x][visible_mask, 1] = ground_visible + 1
 
     return ground, alphas
+
+
+def calculate_alpha(mask, shift, parameters):
+    ratio = parameters['resolution'] / parameters['coverage']
+
+    # ground indices
+    mask_x, mask_y = np.nonzero(mask)[::-1]
+    distance_x, distance_y = mask_x + shift[0], mask_y + shift[1]
+
+    #  field of view triangle
+    a = parameters['height'] * ratio
+    b = np.linalg.norm([distance_x, distance_y], axis=0, keepdims=True)[0]
+    c = np.sqrt(a**2 + b**2)
+
+    # alpha values in degree rounded
+    alpha = np.arccos((a**2 - b**2 + c**2) / (2 * a * c))
+    alpha = np.round(np.rad2deg(alpha)).astype(np.int16)
+
+    return alpha
+
+
+def grayscale_image(image):
+    return np.dot(image[..., :3], [0.2989, 0.5870, 0.1140])
+
+
+def normalize_image(image, cap=None):
+    image = image.astype(np.float64)
+    for i in range(3):
+        minimum, maximum = image[..., i].min(), image[..., i].max()
+        if minimum != maximum:
+            image[..., i] -= minimum
+            image[..., i] *= ((cap if cap else maximum) / (maximum - minimum))
+    return image.astype(np.uint8)
+
+
+def shift_image(image, dx, dy):
+    X = image.copy()
+    X = np.roll(X, dy, axis=0)
+    X = np.roll(X, dx, axis=1)
+    if dy > 0:
+        X[:dy, :] = 0
+    elif dy < 0:
+        X[dy:, :] = 0
+    if dx > 0:
+        X[:, :dx] = 0
+    elif dx < 0:
+        X[:, dx:] = 0
+    return X
+
+
+def plot_heatmap(ax, image, label):
+    ax.set_title(label)
+    sns.heatmap(image, xticklabels=False, yticklabels=False, ax=ax)
+
+
+def plot_histogram(ax, df, x, label):
+    ax.set_title(label)
+    sns.histplot(df, x=x, bins=40, alpha=0.8, kde=True, ax=ax)
+
+
+def plot_image(ax, image, label):
+    ax.set_title(label)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.imshow(image)
+
+
+def plot_images(images, labels, rows=5, cols=5):
+    fig, axes = plt.subplots(rows, cols, figsize=(16, 16))
+    axes = [a for axs in axes for a in axs]
+    for i, image in enumerate(images[:rows * cols]):
+        plot_image(axes[i], image, labels[i])
+    plt.show()
+
+
+def export_plot(fig, path):
+    fig.savefig(path, transparent=True)
+    fig.clf()
+    plt.close()
+
+
+def rgba(color):
+    r = (color & 0xff0000) >> 16
+    g = (color & 0x00ff00) >> 8
+    b = (color & 0x0000ff)
+    a = 255
+    return np.array([r, g, b, a])
+
+
+def get_value(dic, keys):
+    for key in keys:
+        dic = dic[key]
+    return dic
+
+
+def set_value(dic, keys, value):
+    for key in keys[:-1]:
+        dic = dic.setdefault(key, {})
+    dic[keys[-1]] = value
+    return dic

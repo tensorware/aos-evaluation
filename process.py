@@ -14,12 +14,17 @@ import matplotlib.pyplot as plt
 
 def main(args):
     """
-    Execute with: python process.py --path data/v6/forest-xx
+        python process.py --path data/v6/forest-06 && \
+        python process.py --path data/v6/forest-05 && \
+        python process.py --path data/v6/forest-04 && \
+        python process.py --path data/v6/forest-03 && \
+        python process.py --path data/v6/forest-02 && \
+        python process.py --path data/v6/forest-01
     """
 
     # zip files
     zip_files = os.path.join(args.path, '*.zip')
-    for zip_path in sorted(gb.glob(zip_files, recursive=True)):
+    for zip_path in sorted(gb.glob(zip_files, recursive=True))[:1]:
 
         # load data
         data = ut.load_data(zip_path)
@@ -42,9 +47,6 @@ def main(args):
 
         # integrate ground
         ground, alphas = ut.integrate_ground(df, parameters)
-        df_alpha = pd.DataFrame(alphas.T, columns=['visible_x', 'visible_y', 'camera_x', 'camera_y', 'alpha'])
-        df_alpha = df_alpha.sort_values(['visible_x', 'visible_y'], ignore_index=True)
-        df_alpha = df_alpha.apply(pd.to_numeric, downcast='integer')
         np.save(os.path.join(output_folder, f'ground{name_suffix}.npy'), ground)
         np.save(os.path.join(output_folder, f'alpha{name_suffix}.npy'), alphas)
 
@@ -54,18 +56,11 @@ def main(args):
         ut.export_plot(fig, os.path.join(output_folder, f'stage{name_suffix}.png'))
 
         # plot ground images
-        fig, axs = plt.subplots(1, 4, figsize=(24, 4))
+        fig, axs = plt.subplots(1, 3, figsize=(24, 6))
         ut.plot_heatmap(axs[0], ground[:, :, 0], 'scanned pixels (count)')
-        ut.plot_heatmap(axs[1], ground[:, :, 1], 'captured pixels (count)')
-        ut.plot_heatmap(axs[2], ground[:, :, 2], 'captured pixels (alpha)')
-        ut.plot_heatmap(axs[3], ut.normalize_image(ground[:, :, 1] > 0), 'captured pixels (binary)')
+        ut.plot_heatmap(axs[1], ground[:, :, 1], 'visible pixels (count)')
+        ut.plot_heatmap(axs[2], ut.normalize_image(ground[:, :, 1] > 0), 'visible pixels (binary)')
         ut.export_plot(fig, os.path.join(output_folder, f'ground{name_suffix}.png'))
-
-        # plot alpha distribution
-        fig, ax = plt.subplots(figsize=(12, 8))
-        df_alpha = df_alpha.sample(n=np.minimum(df_alpha.shape[0], 10**5), random_state=42)
-        ut.plot_histogram(ax, df_alpha, 'alpha', f'field of view {parameters["view"]}°')
-        ut.export_plot(fig, os.path.join(output_folder, f'alpha{name_suffix}.png'))
 
         # export parameters
         with open(os.path.join(output_folder, f'parameters{name_suffix}.json'), 'w') as f:
