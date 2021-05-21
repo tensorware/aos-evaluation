@@ -8,7 +8,7 @@
             "program": "process.py",
             "args": [
                 "--path",
-                "data/v6/forest-01",
+                "data/v6/forest-06",
                 "--output",
                 "results"
             ],
