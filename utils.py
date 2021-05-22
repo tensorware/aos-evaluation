@@ -124,7 +124,7 @@ def integrate_ground(images, parameters):
     # ground size
     size = np.floor(parameters['ground'] * ratio).astype(np.uint16)
     ground = np.zeros((size, size, 2)).astype(np.uint16)
-    alphas = np.zeros((size, size, 2, parameters['view'])).astype(np.uint16)
+    alphas = np.zeros((size, size, 2, parameters['view'] + 2)).astype(np.uint16)
 
     # mask ground color
     color = rgba(parameters['color'])
@@ -150,7 +150,7 @@ def integrate_ground(images, parameters):
         visible_mask = np.all(img[slice_y_offset, slice_x_offset] == color, axis=2)
         scanned_mask = np.full(visible_mask.shape, True)
         shift_mask = np.array([slice_x.start - center[0], slice_y.start - center[1]])
-
+        
         # calculate alphas
         alphas_scanned_value = calculate_alpha(scanned_mask, shift_mask, parameters)
         alphas_visible_value = calculate_alpha(visible_mask, shift_mask, parameters)
@@ -171,7 +171,7 @@ def integrate_ground(images, parameters):
         ground_visible = ground[slice_y, slice_x][visible_mask, 1]
         ground[slice_y, slice_x][visible_mask, 1] = ground_visible + 1
 
-    return ground, alphas
+    return ground, alphas[:, :, :, :-1]     # drop last dimension
 
 
 def calculate_alpha(mask, shift, parameters):
@@ -181,7 +181,7 @@ def calculate_alpha(mask, shift, parameters):
     mask_x, mask_y = np.nonzero(mask)[::-1]
     distance_x, distance_y = mask_x + shift[0], mask_y + shift[1]
 
-    #  field of view triangle
+    # field of view triangle
     a = parameters['height'] * ratio
     b = np.linalg.norm([distance_x, distance_y], axis=0, keepdims=True)[0]
     c = np.sqrt(a**2 + b**2)
@@ -189,6 +189,10 @@ def calculate_alpha(mask, shift, parameters):
     # alpha values in degree rounded
     alpha = np.arccos((a**2 - b**2 + c**2) / (2 * a * c))
     alpha = np.round(np.rad2deg(alpha)).astype(np.int16)
+
+    # move alphas (to end) by filter distance #
+    # alpha[distance_x != 0] = -1      # 1D scan along x #
+    # alpha[distance_x != 0] = -1      # 1D scan along y #
 
     return alpha
 
