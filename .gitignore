@@ -4,6 +4,6 @@ __pycache__/
 __pypackages__/
 .virtual_documents/
 .ipynb_checkpoints/
+backup/
 results/
 data/
-bak/
