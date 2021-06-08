@@ -220,7 +220,6 @@ def aggregate_alphas(alphas, sample=None):
 
     # aggregate alphas
     df_alphas_agg = df_alphas.groupby('alpha').mean()
-    df_alphas_agg['result'] = df_alphas_agg['visible'] / df_alphas_agg['scanned'] # same as ratio mean
 
     return df_alphas_agg.reset_index()
 
