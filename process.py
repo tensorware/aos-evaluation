@@ -7,19 +7,22 @@ import utils as ut
 import numpy as np
 import pandas as pd
 import seaborn as sns
-
-import ipywidgets as pyw
 import matplotlib.pyplot as plt
 
 
 def main(args):
-    """
-        python process.py --path data/v6/forest-06 && \
-        python process.py --path data/v6/forest-05 && \
-        python process.py --path data/v6/forest-04 && \
-        python process.py --path data/v6/forest-03 && \
-        python process.py --path data/v6/forest-02 && \
-        python process.py --path data/v6/forest-01
+    """ Execute:
+        -------------------------------------------------------------------
+        python process.py --path data/v6/forest-06 --output results/v6 && \
+        python process.py --path data/v6/forest-05 --output results/v6 && \
+        python process.py --path data/v6/forest-04 --output results/v6 && \
+        python process.py --path data/v6/forest-03 --output results/v6 && \
+        python process.py --path data/v6/forest-02 --output results/v6 && \
+        python process.py --path data/v6/forest-01 --output results/v6
+        -------------------------------------------------------------------
+        python process.py --path data/v7/forest-14 --output results/v7 && \
+        python process.py --path data/v7/forest-13 --output results/v7 && \
+        python process.py --path data/v7/forest-12 --output results/v7
     """
 
     # zip files

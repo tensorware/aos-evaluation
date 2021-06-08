@@ -122,10 +122,10 @@ def integrate_ground(images, parameters):
 
     # ground size
     size = np.floor(parameters['ground'] * ratio).astype(np.uint16)
-    
+
     # ground tensor with scanned/visible counts
     ground = np.zeros((size, size, 2)).astype(np.uint16)
-    
+
     # alpha tensor with scanned/visible counts per alpha (binned)
     alphas = np.zeros((size, size, 2, parameters['view'] + 2)).astype(np.uint16)
 
@@ -153,7 +153,7 @@ def integrate_ground(images, parameters):
         visible_mask = np.all(img[slice_y_offset, slice_x_offset] == color, axis=2)
         scanned_mask = np.full(visible_mask.shape, True)
         shift_mask = np.array([slice_x.start - center[0], slice_y.start - center[1]])
-        
+
         # calculate alphas
         alphas_scanned_value = calculate_alphas(scanned_mask, shift_mask, parameters)
         alphas_visible_value = calculate_alphas(visible_mask, shift_mask, parameters)
@@ -174,7 +174,7 @@ def integrate_ground(images, parameters):
         ground_visible = ground[slice_y, slice_x][visible_mask, 1]
         ground[slice_y, slice_x][visible_mask, 1] = ground_visible + 1
 
-    return ground, alphas[:, :, :, :-1] # drop last dimension
+    return ground, alphas[:, :, :, :-1]  # drop last dimension
 
 
 def calculate_alphas(mask, shift, parameters):
@@ -201,7 +201,7 @@ def calculate_alphas(mask, shift, parameters):
 
 
 def aggregate_alphas(alphas, sample=None):
-    
+
     # scanned alpha indices
     alphas_idx = np.nonzero(alphas[:, :, 0])
     sample_idx = np.random.choice(np.arange(alphas_idx[0].shape[0]), sample) if sample else slice(None)
@@ -210,18 +210,18 @@ def aggregate_alphas(alphas, sample=None):
     # alpha values
     scanned_alphas = alphas[alphas_idx_x, alphas_idx_y, 0, alphas_idx_a]
     visible_alphas = alphas[alphas_idx_x, alphas_idx_y, 1, alphas_idx_a]
-    
+
     # alphas data
     data_alphas = np.array([alphas_idx_a, scanned_alphas, visible_alphas, visible_alphas / scanned_alphas]).T
-    
+
     # alphas dataframe
     df_alphas = pd.DataFrame(data_alphas, columns=['alpha', 'scanned', 'visible', 'ratio'])
     df_alphas = df_alphas.apply(pd.to_numeric, downcast='integer')
-    
+
     # aggregate alphas
     df_alphas_agg = df_alphas.groupby('alpha').mean()
-    # df_alphas_agg['result'] = df_alphas_agg['visible'] / df_alphas_agg['scanned'] # same as ratio mean
-    
+    df_alphas_agg['result'] = df_alphas_agg['visible'] / df_alphas_agg['scanned'] # same as ratio mean
+
     return df_alphas_agg.reset_index()
 
 
