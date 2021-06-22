@@ -1,8 +1,26 @@
-# Process
-Pre-process simulation data for visualization
+# AOS-Evaluation
+Airborne Optical Sectioning Evaluation based on https://arxiv.org/abs/2009.08835.
 
-# Visualize
-Visualize pre-processed simulation data
+## Abstract
+> We show that automated person detection under occlusion conditions can be significantly improved by combining multi-perspective images before classification. Here, we employed image integration by Airborne Optical Sectioning (AOS) - a synthetic aperture imaging technique that uses camera drones to capture unstructured thermal light fields - to achieve this with a precision/recall of 96/93%. Finding lost or injured people in dense forests is not generally feasible with thermal recordings, but becomes practical with use of AOS integral images. Our findings lay the foundation for effective future search and rescue technologies that can be applied in combination with autonomous or manned aircraft. They can also be beneficial for other fields that currently suffer from inaccurate classification of partially occluded people, animals, or objects.
 
-# Optimize
-Optimize parameters
+## Video
+[![YouTube](https://img.youtube.com/vi/kyKVQYG-j7U/0.jpg)](https://www.youtube.com/watch?v=kyKVQYG-j7U)
+
+## Data
+Data generated with "AOS-Simulation" which can be found [here](https://aos.tensorware.app).
+
+### Process
+Pre-process simulation data for visualization.
+
+### Visualize
+Visualize pre-processed simulation data.
+
+### Optimize
+Optimize parameters.
+
+## Status
+Work in progress, more to come...
+
+## License
+[MIT](/LICENSE)
