@@ -23,6 +23,17 @@ def main(args):
         python process.py --path data/v7/forest-14 --output results/v7 && \
         python process.py --path data/v7/forest-13 --output results/v7 && \
         python process.py --path data/v7/forest-12 --output results/v7
+        -------------------------------------------------------------------
+        python process.py --path data/v8/forest-43 --output results/v8 && \
+        python process.py --path data/v8/forest-42 --output results/v8 && \
+        python process.py --path data/v8/forest-41 --output results/v8 && \
+        python process.py --path data/v8/forest-33 --output results/v8 && \
+        python process.py --path data/v8/forest-32 --output results/v8 && \
+        python process.py --path data/v8/forest-31 --output results/v8 && \
+        python process.py --path data/v8/forest-23 --output results/v8 && \
+        python process.py --path data/v8/forest-22 --output results/v8 && \
+        python process.py --path data/v8/forest-21 --output results/v8
+        -------------------------------------------------------------------
     """
 
     # zip files
@@ -58,11 +69,16 @@ def main(args):
         ut.plot_image(ax, data[simulation]['stage'], 'stage')
         ut.export_plot(fig, os.path.join(output_folder, f'stage{name_suffix}.png'))
 
+        # calculate ground visibility
+        scanned = np.count_nonzero(ground[:, :, 0])
+        captured = np.count_nonzero(ground[:, :, 1])
+        visibility = captured / scanned
+
         # plot ground images
         fig, axs = plt.subplots(1, 3, figsize=(24, 6))
         ut.plot_heatmap(axs[0], ground[:, :, 0], 'scanned pixels (count)')
         ut.plot_heatmap(axs[1], ground[:, :, 1], 'visible pixels (count)')
-        ut.plot_heatmap(axs[2], ut.normalize_image(ground[:, :, 1] > 0), 'visible pixels (binary)')
+        ut.plot_heatmap(axs[2], ut.normalize_image(ground[:, :, 1] > 0), f'visibility ({visibility:.2f})')
         ut.export_plot(fig, os.path.join(output_folder, f'ground{name_suffix}.png'))
 
         # export parameters
