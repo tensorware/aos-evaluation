@@ -255,7 +255,10 @@ def shift_image(image, dx, dy):
 
 def plot_heatmap(ax, image, label):
     ax.set_title(label)
-    sns.heatmap(image, xticklabels=False, yticklabels=False, ax=ax)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.axis('off')
+    sns.heatmap(image, ax=ax)
 
 
 def plot_histogram(ax, df, x, label):
@@ -267,6 +270,7 @@ def plot_image(ax, image, label):
     ax.set_title(label)
     ax.set_xticks([])
     ax.set_yticks([])
+    ax.axis('off')
     ax.imshow(image)
 
 
@@ -278,10 +282,12 @@ def plot_images(images, labels, rows=5, cols=5):
     plt.show()
 
 
-def export_plot(fig, path):
+def export_plot(fig, path, close=True):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     fig.savefig(path, transparent=True)
-    fig.clf()
-    plt.close()
+    if close:
+        fig.clf()
+        plt.close()
 
 
 def rgba(color):
