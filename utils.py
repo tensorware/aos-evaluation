@@ -12,12 +12,16 @@ from PIL import Image
 from zipfile import ZipFile
 
 
-def load_data(path):
+def load_data(path, limit=None):
     data = {}
-    data_folder = tempfile.mkdtemp()
 
-    # extract files
-    for zip_path in sorted(gb.glob(path, recursive=True)):
+    # data zip paths
+    zip_paths = sorted(gb.glob(path, recursive=True))
+    zip_paths = zip_paths[:limit] if limit and limit < len(zip_paths) else zip_paths
+
+    # extract zip files
+    data_folder = tempfile.mkdtemp()
+    for zip_path in zip_paths:
         with ZipFile(zip_path, 'r') as z:
             zip_name = os.path.basename(zip_path).rsplit('.', 1)[0]
             folder_path = os.path.join(data_folder, zip_name)
@@ -25,87 +29,219 @@ def load_data(path):
             print(f'extract {folder_path}')
             z.extractall(folder_path)
 
-    # load config
+    # load json files
     configs = {}
     for config_path in sorted(gb.glob(os.path.join(data_folder, '**', '*.json'), recursive=True)):
         config_file = os.path.basename(config_path)
-        config_name = os.path.basename(config_file).rsplit('.', 1)[0]
         config_dir = os.path.dirname(os.path.relpath(config_path, data_folder))
 
-        keys = config_dir.split(os.path.sep) + [config_name]
+        keys = config_dir.split(os.path.sep) + [config_file]
         set_value(configs, keys, json.load(open(config_path)))
 
-    # load images
+    # load png images
     images = {}
     for image_path in sorted(gb.glob(os.path.join(data_folder, '**', '*.png'), recursive=True)):
         image_file = os.path.basename(image_path)
-        image_name = os.path.basename(image_file).rsplit('.', 1)[0]
         image_dir = os.path.dirname(os.path.relpath(image_path, data_folder))
 
-        keys = image_dir.split(os.path.sep) + [image_name]
+        keys = image_dir.split(os.path.sep) + [image_file]
         set_value(images, keys, np.array(Image.open(image_path)))
 
-    # generate dataframe
+    # generate data
     for simulation in images:
-        df = pd.DataFrame()
 
-        # image parameter
-        parameters = dict()
-        parameters.update(get_value(configs, [simulation, 'drone', 'drone']))
-        parameters.update(get_value(configs, [simulation, 'config'])['drone']['camera'])
-        parameters.update({'preset': get_value(configs, [simulation, 'config'])['preset']})
-        parameters.update({'size': get_value(configs, [simulation, 'config'])['forest']['size']})
-        parameters.update({'ground': get_value(configs, [simulation, 'config'])['forest']['ground']})
-        parameters.update({'color': get_value(configs, [simulation, 'config'])['material']['color']['plane']})
+        # parameters
+        parameters = load_parameters(simulation, configs)
 
-        # image center
-        img_center = {}
-        for capture in get_value(configs, [simulation, 'drone', 'camera', 'camera', 'captures']):
-            img_center[capture['image']] = capture['center']
+        # dataframe images
+        df_images = load_images(simulation, configs, images, parameters)
+        df_images = df_images.sort_values('number', ignore_index=True)
+        df_images = df_images.reset_index(drop=True)
 
-        # image data
-        for img_name, img_data in get_value(images, [simulation, 'drone', 'camera']).items():
-            img_number = int(img_name.split('-')[1])
-            img_type = img_name.split('-')[-1] if img_name.count('-') == 2 else 'raw'
+        # dataframe persons
+        df_persons = load_persons(simulation, configs)
 
-            df = df.append(pd.json_normalize({
-                'number': img_number,
-                'name': img_name,
-                'type': img_type,
-                'data': img_data,
-                **img_center[img_number]
-            }), ignore_index=True)
+        # dataframe trees
+        df_trees = load_trees(simulation, configs)
 
-        df = df.astype({'number': np.int})
-        df = df.sort_values(by=['number', 'type'], ignore_index=True)
+        # stage image
+        stage = get_value(images, [simulation, 'stage'])['image.png']
 
-        # stage, parameters and images
+        # set simulation data
         data[simulation] = {
-            'stage': get_value(images, [simulation, 'stage', 'image']),
             'parameters': parameters,
-            'images': df
+            'images': df_images,
+            'persons': df_persons,
+            'trees': df_trees,
+            'stage': stage
         }
 
     return data
+
+
+def load_parameters(simulation, configs):
+    settings_json = json.load(open('settings.json'))
+    config_json = get_value(configs, [simulation, 'config.json'])
+    drone_json = get_value(configs, [simulation, 'drone', 'drone.json'])
+
+    # parameters
+    parameters = config_json.copy()
+
+    # delete parameters
+    del_keys(parameters, 'drone.cpu')
+    del_keys(parameters, 'drone.eastWest')
+    del_keys(parameters, 'drone.northSouth')
+    del_keys(parameters, 'drone.camera.images')
+    del_keys(parameters, 'forest.trees')
+
+    # add parameters
+    set_value(parameters, 'drone.coverage', get_value(drone_json, 'coverage'))
+    set_value(parameters, 'url', f'{get_value(settings_json, "simulation.url")}#preset={get_value(parameters, "preset")}')
+
+    return parameters
+
+
+def load_images(simulation, configs, images, parameters):
+    camera_json = get_value(configs, [simulation, 'drone', 'camera', 'camera.json'])
+
+    # image center
+    img_center = {}
+    for capture in get_value(camera_json, 'captures'):
+        img_number = get_value(capture, 'image')
+        img_center[img_number] = get_value(capture, 'center')
+
+    # image dataframe
+    df_images = pd.DataFrame()
+    for img_name, img_data in get_value(images, [simulation, 'drone', 'camera']).items():
+
+        # image number and type
+        img_parts = img_name.split('.')[0].split('-')
+        img_number = int(img_parts[1])
+        img_type = img_parts[-1]
+
+        # normalize nested objects
+        df_image = pd.json_normalize({
+            'number': img_number,
+            'name': img_name,
+            'type': img_type,
+            'data': img_data,
+            **img_center[img_number]
+        })
+
+        # cast numeric datatypes
+        cast = {'float32': ['x', 'y', 'z']}
+        for dtype, columns in cast.items():
+            df_image[columns] = df_image[columns].astype(dtype)
+
+        # create preview url
+        df_image['url'] = '&'.join([
+            get_value(parameters, 'url'),
+            f'drone.height={get_value(parameters, "drone.height", 0)}',
+            f'drone.rotation={get_value(parameters, "drone.rotation", 0)}',
+            f'drone.eastWest={df_image["x"].item():0.2f}',
+            f'drone.northSouth={df_image["z"].item():0.2f}',
+            f'drone.camera.view={get_value(parameters, "drone.camera.view", 0)}'
+        ])
+
+        # append to dataframe
+        df_images = df_images.append(df_image, ignore_index=True)
+
+    return df_images
+
+
+def load_persons(simulation, configs):
+    persons_json = get_value(configs, [simulation, 'forest', 'persons.json'])
+
+    # normalize nested objects
+    df_persons = pd.json_normalize(persons_json['tracks'])
+
+    # cast numeric datatypes
+    cast = {'float32': [x for x in df_persons.columns if x not in ['person', 'activity']]}
+    for dtype, columns in cast.items():
+        df_persons[columns] = df_persons[columns].astype(dtype)
+
+    return df_persons
+
+
+def load_trees(simulation, configs):
+    trees_json = get_value(configs, [simulation, 'forest', 'trees.json'])
+
+    # normalize nested objects
+    df_trees = pd.json_normalize(trees_json['locations'])
+
+    # cast numeric datatypes
+    cast = {'float32': [x for x in df_trees.columns if x not in ['tree']]}
+    for dtype, columns in cast.items():
+        df_trees[columns] = df_trees[columns].astype(dtype)
+
+    return df_trees
+
+
+def sample_data(parameters):
+    df_partitions = pd.DataFrame()
+
+    # images step size and coverage
+    step = get_value(parameters, 'drone.camera.sampling')
+    coverage = get_value(parameters, 'drone.coverage')
+
+    # possible increased samplings steps
+    sup_steps = np.arange(step, coverage + step, step=step)
+
+    # possible decreased number of captures
+    sub_samples = np.arange(1, np.ceil(coverage / step).astype(np.uint16) + 1, step=1)
+
+    # possible partitions
+    partitions = coverage / sup_steps
+
+    for num in sub_samples:
+
+        # index to nearest partition
+        idx = np.abs(num - partitions).argmin()
+
+        # difference to nearest partition
+        diff = np.abs(num - partitions[idx])
+
+        # append to dataframe
+        df_partitions = df_partitions.append({'num': num, 'idx': idx, 'diff': diff, 'dist': sup_steps[idx]}, ignore_index=True)
+
+    # group by index and pick nearest approximation of partition
+    df_partitions = df_partitions.loc[df_partitions.groupby('idx')['diff'].idxmin()]
+    df_partitions = df_partitions.convert_dtypes()
+
+    # dictionary with { num_captures_per_point: index_to_pick_every_i_th_image }
+    N = dict(zip(df_partitions['num'].astype(int), df_partitions['idx'].astype(int) + 1))
+
+    # dictionary with { num_captures_per_point: distance_in_m_between_every_image }
+    M = dict(zip(df_partitions['num'].astype(int), df_partitions['dist'].astype(float)))
+
+    return N, M
 
 
 def integrate_image(images, parameters, N=30):
     integrated = []
 
     # mask ground color
-    color = rgba(parameters['color'])
+    color = to_rgba(get_value(parameters, 'material.color.plane'))
 
     # current image
     for i, row in images.iterrows():
-        img, img_x, img_z = row[['data', 'processed.x', 'processed.z']]
+
+        # image center in pixel
+        img = row['data']
+        img_x = to_pixel(row['x'], parameters)
+        img_y = to_pixel(row['z'], parameters)
 
         # mask current image
         ground_mask = np.all(img == color, axis=2)
 
         # previous N images
         for j, prev_row in images[max(0, i - N):i][::-1].iterrows():
-            prev_img, prev_img_x, prev_img_z = prev_row[['data', 'processed.x', 'processed.z']]
-            delta = np.subtract([prev_img_x, prev_img_z], [img_x, img_z]).astype(np.int16)
+            prev_img = prev_row['data']
+            prev_img_x = to_pixel(prev_row['x'], parameters)
+            prev_img_y = to_pixel(prev_row['z'], parameters)
+
+            # distance between images
+            delta = np.subtract([prev_img_x, prev_img_y], [img_x, img_y]).astype(np.int16)
 
             # shift and mask previous image
             prev_img_shifted = shift_image(prev_img, dx=delta[0], dy=delta[1])
@@ -118,26 +254,28 @@ def integrate_image(images, parameters, N=30):
 
 
 def integrate_ground(images, parameters):
-    ratio = parameters['resolution'] / parameters['coverage']
-
     # ground size
-    size = np.floor(parameters['ground'] * ratio).astype(np.uint16)
+    size = to_pixel(get_value(parameters, 'forest.ground'), parameters)
 
     # ground tensor with scanned/visible counts
     ground = np.zeros((size, size, 2)).astype(np.uint16)
 
     # alpha tensor with scanned/visible counts per alpha (binned)
-    alphas = np.zeros((size, size, 2, parameters['view'] + 2)).astype(np.uint16)
+    alphas = np.zeros((size, size, 2, get_value(parameters, 'drone.camera.view') + 1)).astype(np.uint16)
 
     # mask ground color
-    color = rgba(parameters['color'])
+    color = to_rgba(get_value(parameters, 'material.color.plane'))
 
     # current image
     for i, row in images.iterrows():
-        img, img_x, img_z = row[['data', 'processed.x', 'processed.z']]
+
+        # image center in pixel
+        img = row['data']
+        img_x = to_pixel(row['x'], parameters)
+        img_y = to_pixel(row['z'], parameters)
 
         # image center, radius and border position on target area
-        center = np.floor(np.add([size / 2, size / 2], [img_x, img_z])).astype(np.int16)
+        center = np.floor(np.add([size / 2, size / 2], [img_x, img_y])).astype(np.int16)
         radius = np.floor([img.shape[0] / 2, img.shape[1] / 2]).astype(np.int16)
         border = np.array([center - radius, center + radius]).T
 
@@ -174,26 +312,25 @@ def integrate_ground(images, parameters):
         ground_visible = ground[slice_y, slice_x][visible_mask, 1]
         ground[slice_y, slice_x][visible_mask, 1] = ground_visible + 1
 
-    return ground, alphas[:, :, :, :-1]  # drop last dimension
+    # drop last dimension *
+    return ground, alphas[:, :, :, :-1]
 
 
 def calculate_alphas(mask, shift, parameters):
-    ratio = parameters['resolution'] / parameters['coverage']
-
     # ground indices
     mask_x, mask_y = np.nonzero(mask)[::-1]
     distance_x, distance_y = mask_x + shift[0], mask_y + shift[1]
 
     # field of view triangle
-    a = parameters['height'] * ratio
+    a = to_pixel(get_value(parameters, 'drone.height'), parameters)
     b = np.linalg.norm([distance_x, distance_y], axis=0, keepdims=True)[0]
     c = np.sqrt(a**2 + b**2)
 
-    # alpha values in degree rounded to nearest integer
+    # alpha values floored to nearest integer
     alpha = np.arccos((a**2 - b**2 + c**2) / (2 * a * c))
     alpha = np.floor(np.rad2deg(alpha)).astype(np.int16)
 
-    # move alphas to last dimension
+    # move alphas to last dimension *
     # alpha[distance_x != 0] = -1 # 1D scan along x
     # alpha[distance_x != 0] = -1 # 1D scan along y
 
@@ -201,7 +338,6 @@ def calculate_alphas(mask, shift, parameters):
 
 
 def aggregate_alphas(alphas, sample=None):
-
     # scanned alpha indices
     alphas_idx = np.nonzero(alphas[:, :, 0])
     sample_idx = np.random.choice(np.arange(alphas_idx[0].shape[0]), sample) if sample else slice(None)
@@ -224,6 +360,20 @@ def aggregate_alphas(alphas, sample=None):
     return df_alphas_agg.reset_index()
 
 
+def to_pixel(value, parameters):
+    coverage = get_value(parameters, 'drone.coverage')
+    resolution = get_value(parameters, 'drone.camera.resolution')
+    return np.floor(value * resolution / coverage).astype(np.uint16)
+
+
+def to_rgba(color):
+    r = (color & 0xff0000) >> 16
+    g = (color & 0x00ff00) >> 8
+    b = (color & 0x0000ff)
+    a = 255
+    return np.array([r, g, b, a])
+
+
 def grayscale_image(image):
     return np.dot(image[..., :3], [0.2989, 0.5870, 0.1140])
 
@@ -234,7 +384,7 @@ def normalize_image(image, cap=None):
         minimum, maximum = image[..., i].min(), image[..., i].max()
         if minimum != maximum:
             image[..., i] -= minimum
-            image[..., i] *= ((cap if cap else maximum) / (maximum - minimum))
+            image[..., i] *= (cap if cap else maximum) / (maximum - minimum)
     return image.astype(np.uint8)
 
 
@@ -274,37 +424,60 @@ def plot_image(ax, image, label):
     ax.imshow(image)
 
 
-def plot_images(images, labels, rows=5, cols=5):
-    fig, axes = plt.subplots(rows, cols, figsize=(16, 16))
-    axes = [a for axs in axes for a in axs]
+def plot_images(images, labels, rows=5, cols=5, figsize=(16, 16)):
+    fig, axs = plt.subplots(rows, cols, figsize=figsize)
+    if rows > 1 and cols > 1:
+        axs = [y for x in axs for y in x]
     for i, image in enumerate(images[:rows * cols]):
-        plot_image(axes[i], image, labels[i])
-    plt.show()
+        ax = axs[i] if rows + cols > 2 else axs
+        plot_image(ax, image, labels[i])
+    return fig, axs
+
+
+def plot_ground(ground, labels, rows=1, cols=3, figsize=(24, 6)):
+    fig, axs = plt.subplots(rows, cols, figsize=figsize)
+    plot_heatmap(axs[0], ground[:, :, 0], labels[0])
+    plot_heatmap(axs[1], ground[:, :, 1], labels[1])
+    plot_heatmap(axs[2], normalize_image(ground[:, :, 1] > 0), labels[2])
+    return fig, axs
 
 
 def export_plot(fig, path, close=True):
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    fig.tight_layout()
     fig.savefig(path, transparent=True)
     if close:
         fig.clf()
         plt.close()
 
 
-def rgba(color):
-    r = (color & 0xff0000) >> 16
-    g = (color & 0x00ff00) >> 8
-    b = (color & 0x0000ff)
-    a = 255
-    return np.array([r, g, b, a])
+def colors(cmap, size):
+    c = plt.cm.get_cmap(cmap, size)
+    return [c(i) for i in range(size)]
 
 
-def get_value(dic, keys):
+def get_keys(keys):
+    if isinstance(keys, list):
+        return keys
+    return keys.split('.')
+
+
+def del_keys(dic, keys):
+    keys = get_keys(keys)
+    for key in keys[:-1]:
+        dic = dic.get(key, {})
+    return dic.pop(keys[-1], None)
+
+
+def get_value(dic, keys, default=None):
+    keys = get_keys(keys)
     for key in keys:
-        dic = dic[key]
-    return dic
+        dic = dic.get(key, {})
+    return dic or default
 
 
 def set_value(dic, keys, value):
+    keys = get_keys(keys)
     for key in keys[:-1]:
         dic = dic.setdefault(key, {})
     dic[keys[-1]] = value
