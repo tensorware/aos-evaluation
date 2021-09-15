@@ -26,10 +26,11 @@ def main(args):
         # load data
         data = ut.load_data(zip_path)
         
-        # load images
+        # load dataframes
         simulation = next(iter(data))
-        df = data[simulation]['images']
-        
+        df_images = data[simulation]['images']
+        df_trees = data[simulation]['trees']
+
         # load parameters
         parameters = data[simulation]['parameters']
         print(f'process {simulation}', json.dumps(parameters, indent=4))
@@ -44,26 +45,35 @@ def main(args):
         for n in N.keys():
             
             # images by step size
-            df_images = df.iloc[::N[n], :]
-            print(f'export {simulation} for {df_images.shape[0]:4d} images taken every {M[n]:5.2f} meter (N={n:03d})')
+            df_integrate = df_images.iloc[::N[n], :]
+            print(f'export {simulation} for {df_integrate.shape[0]:4d} images taken every {M[n]:5.2f} meter (N={n:03d})')
             
             # integrate ground
             ground, alphas = None, None
-            ground, alphas = ut.integrate_ground(df_images, parameters)
-
-            # calculate ground visibility
-            scanned = np.count_nonzero(ground[:, :, 0])
-            visible = np.count_nonzero(ground[:, :, 1])
-            visibility = visible / scanned
+            ground, alphas = ut.integrate_ground(df_integrate, parameters)
+            
+            # calculate statistics
+            statistics = ut.calculate_statistics(df_integrate, df_trees, ground, parameters)
 
             # plot integrated ground
-            fig, axs = ut.plot_ground(ground, ['scanned pixels (count)', 'visible pixels (count)', f'visibility ({visibility:.2f})'])
+            fig, axs = ut.plot_ground(ground, ['scanned pixels (count)', 'visible pixels (count)', f'visibility ({statistics["ground_visibility"]:.2f})'])
+
+            # plot tree positions
+            ground_rect = [[0, ground.shape[0]], [0, ground.shape[1]]]
+            trees_pos = ut.ground_positions(df_trees[['position.x', 'position.z']], ground_rect, parameters)
+            axs[2].scatter(*trees_pos.T, marker='o', facecolor='firebrick', edgecolor='lightgray', linewidth=0.7)
+
+            # export ground image
             ut.export_plot(fig, os.path.join(output_folder, f'ground-{name_suffix}-N{n:03d}.png'))
-            np.savez_compressed(os.path.join(output_folder, f'data-{name_suffix}-N{n:03d}.npz'), ground=ground, alphas=alphas, visibility=visibility)
+            
+            # export data
+            np.savez_compressed(os.path.join(output_folder, f'data-{name_suffix}-N{n:03d}.npz'), ground=ground, alphas=alphas, statistics=statistics)
 
         # plot stage image
         fig, ax = plt.subplots(figsize=(16, 8))
         ut.plot_image(ax, data[simulation]['stage'], 'stage')
+        
+        # export stage image
         ut.export_plot(fig, os.path.join(output_folder, f'stage-{name_suffix}.png'))
         
         # export parameters
