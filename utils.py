@@ -80,7 +80,7 @@ def load_data(path, limit=None):
 
 
 def load_parameters(simulation, configs):
-    
+
     # load json
     settings_json = json.load(open('settings.json'))
     config_json = get_value(configs, [simulation, 'config.json'])
@@ -104,7 +104,7 @@ def load_parameters(simulation, configs):
 
 
 def load_images(simulation, configs, images, parameters):
-    
+
     # load json
     camera_json = get_value(configs, [simulation, 'drone', 'camera', 'camera.json'])
 
@@ -154,7 +154,7 @@ def load_images(simulation, configs, images, parameters):
 
 
 def load_persons(simulation, configs):
-    
+
     # load json
     persons_json = get_value(configs, [simulation, 'forest', 'persons.json'])
 
@@ -170,7 +170,7 @@ def load_persons(simulation, configs):
 
 
 def load_trees(simulation, configs):
-    
+
     # load json
     trees_json = get_value(configs, [simulation, 'forest', 'trees.json'])
 
@@ -210,9 +210,9 @@ def sample_data(parameters):
         # difference to nearest partition
         diff = np.abs(num - partitions[idx])
 
-        # append to data       
+        # append to data
         data.append({'num': num, 'idx': idx, 'diff': diff, 'dist': sup_steps[idx]})
-    
+
     # group by index and pick nearest approximation of partition
     df_partitions = pd.DataFrame(data)
     df_partitions = df_partitions.loc[df_partitions.groupby('idx')['diff'].idxmin()]
@@ -228,7 +228,7 @@ def sample_data(parameters):
 
 
 def integrate_image(df_images, parameters, N=30):
-    
+
     # mask ground color
     color = to_rgba(get_value(parameters, 'material.color.plane'))
 
@@ -264,7 +264,7 @@ def integrate_image(df_images, parameters, N=30):
 
 
 def integrate_ground(df_images, parameters):
-    
+
     # ground size
     size = to_pixel(get_value(parameters, 'forest.ground'), parameters)
 
@@ -328,7 +328,7 @@ def integrate_ground(df_images, parameters):
 
 
 def calculate_alphas(mask, shift, parameters):
-    
+
     # ground indices
     mask_x, mask_y = np.nonzero(mask)[::-1]
     distance_x, distance_y = mask_x + shift[0], mask_y + shift[1]
@@ -350,7 +350,7 @@ def calculate_alphas(mask, shift, parameters):
 
 
 def aggregate_alphas(alphas, sample=None):
-    
+
     # scanned alpha indices
     alphas_idx = np.nonzero(alphas[:, :, 0])
     sample_idx = np.random.choice(np.arange(alphas_idx[0].shape[0]), sample) if sample else slice(None)
@@ -374,43 +374,43 @@ def aggregate_alphas(alphas, sample=None):
 
 
 def ground_positions(df_positions, rectangle, parameters):
-    
+
     # ground size
     size = to_pixel(get_value(parameters, 'forest.ground'), parameters)
-    
+
     # convert positions to integer indices
     positions = df_positions.apply(lambda x: to_pixel(x, parameters)).to_numpy()
     idxs = positions + np.floor(size / 2).astype(np.int16) - 1
-    
+
     # remove positions outside ground area
     xy_min, xy_max = np.array(rectangle).T.astype(np.int16)
     idxs = np.delete(idxs, np.where((idxs > xy_max - 1) | (xy_min > idxs))[0], axis=0)
-    
+
     return idxs
 
 
 def calculate_statistics(df_images, df_trees, ground, parameters):
-    
+
     # ground visibility
     ground_scanned = np.count_nonzero(ground[:, :, 0])
     ground_visible = np.count_nonzero(ground[:, :, 1])
     ground_visibility = ground_visible / ground_scanned
-    
+
     # image width and height
     coverage = to_pixel(get_value(parameters, 'drone.coverage'), parameters)
     w, h = np.ceil(coverage / 2).astype(np.int16), np.ceil(coverage / 2).astype(np.int16)
-    
+
     # image positions
     ground_rect = [[0, ground.shape[0]], [0, ground.shape[1]]]
     images_pos = ground_positions(df_images[['x', 'z']], ground_rect, parameters)
-    
+
     # tree positions inside image
     trees_count = []
     for x, y in images_pos:
         image_rect = np.array([[x - w, x + w], [y - h, y + h]])
         trees_pos = ground_positions(df_trees[['position.x', 'position.z']], image_rect, parameters)
         trees_count.append(trees_pos.shape[0])
-    
+
     return {
         'ground_visibility': ground_visibility,
         'trees_per_image': np.mean(trees_count)
@@ -502,15 +502,16 @@ def plot_ground(ground, labels, rows=1, cols=3, figsize=(24, 6)):
 def export_plot(fig, path, close=True):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     fig.tight_layout()
-    fig.savefig(path, transparent=True)
+    fig.savefig(path, bbox_inches='tight', transparent=True)
     if close:
         fig.clf()
         plt.close()
 
 
-def colors(cmap, size):
+def colors(cmap, size, generator=False):
     c = plt.cm.get_cmap(cmap, size)
-    return [c(i) for i in range(size)]
+    colors = (c(i) for i in range(size))
+    return colors if generator else list(colors)
 
 
 def get_keys(keys):

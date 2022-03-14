@@ -1,4 +1,8 @@
 {
+    "data": {
+        "input": "./data/input/",
+        "output": "./data/output/"
+    },
     "simulation": {
         "url": "https://aos.tensorware.app/"
     }

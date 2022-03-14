@@ -7,10 +7,10 @@
             "request": "launch",
             "program": "process.py",
             "args": [
-                "--path",
-                "data/v6/forest-06",
+                "--input",
+                "data/input/forest-21",
                 "--output",
-                "results"
+                "data/output/forest-21"
             ],
             "console": "integratedTerminal"
         }
